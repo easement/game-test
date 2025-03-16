@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Gems</title>
+</head>
+<body>
+    <script>
+        const colors = {
+            'red': '#ff4444',
+            'blue': '#4444ff',
+            'green': '#44ff44',
+            'yellow': '#ffff44',
+            'purple': '#ff44ff'
+        };
+
+        const size = 64;
+        
+        Object.entries(colors).forEach(([name, color]) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw gem shape
+            ctx.beginPath();
+            ctx.moveTo(size/2, 5);
+            ctx.lineTo(size-5, size/2);
+            ctx.lineTo(size/2, size-5);
+            ctx.lineTo(5, size/2);
+            ctx.closePath();
+            
+            // Fill with gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.5, color);
+            gradient.addColorStop(1, '#000000');
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Add shine
+            ctx.beginPath();
+            ctx.moveTo(15, 15);
+            ctx.lineTo(25, 15);
+            ctx.lineTo(15, 25);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.fill();
+            
+            // Add to page for download
+            const link = document.createElement('a');
+            link.download = `${name}_gem.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.textContent = `Download ${name} gem`;
+            link.style.display = 'block';
+            link.style.margin = '10px';
+            document.body.appendChild(canvas);
+            document.body.appendChild(link);
+        });
+    </script>
+</body>
+</html> 
