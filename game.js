@@ -13,6 +13,14 @@ class GameScene extends Phaser.Scene {
         this.dragStartPos = null;
         this.comboCount = 0;
         this.revealedBlocks = new Set(); // Track revealed blocks
+        this.whirlpools = new Set(); // Track whirlpool power-ups
+        
+        // Add camera shake configuration
+        this.cameraShake = {
+            intensity: 0.005,
+            duration: 100,
+            ease: 'Quad.easeOut'
+        };
         
         // Level thresholds with accelerating requirements
         this.levelThresholds = [
@@ -44,6 +52,24 @@ class GameScene extends Phaser.Scene {
             console.log('Attempting to load:', `assets/${jellyfish}.png`);
             this.load.image(jellyfish, `assets/${jellyfish}.png`);
         });
+
+        // Load whirlpool sprite
+        this.load.image('whirlpool', 'assets/whirlpool.png');
+
+        // Load sound effects with error handling
+        console.log('Loading sound effects...');
+        const soundFiles = [
+            { key: 'match', path: 'assets/sounds/match.mp3' },
+            { key: 'whirlpool', path: 'assets/sounds/whirlpool.mp3' },
+            { key: 'levelup', path: 'assets/sounds/levelup.mp3' },
+            { key: 'ambient', path: 'assets/sounds/ambient.mp3' },
+            { key: 'pop', path: 'assets/sounds/pop.mp3' }
+        ];
+
+        soundFiles.forEach(sound => {
+            console.log('Loading sound:', sound.path);
+            this.load.audio(sound.key, sound.path);
+        });
     }
 
     create() {
@@ -52,8 +78,67 @@ class GameScene extends Phaser.Scene {
         this.gems = this.add.group();
         this.selectedTile = null;
         
+        // Initialize sound effects with error handling
+        console.log('Initializing sound effects...');
+        try {
+            this.sounds = {
+                match: this.sound.add('match', { volume: 0.6 }),
+                whirlpool: this.sound.add('whirlpool', { volume: 0.7 }),
+                levelup: this.sound.add('levelup', { volume: 0.8 }),
+                ambient: this.sound.add('ambient', { 
+                    volume: 0.3,
+                    loop: true 
+                }),
+                pop: this.sound.add('pop', { volume: 0.5 })
+            };
+
+            // Add a start button for audio
+            const startButton = this.add.text(
+                this.game.config.width / 2,
+                this.game.config.height / 2,
+                'Click to Start',
+                {
+                    fontSize: '32px',
+                    fill: '#fff',
+                    backgroundColor: '#4a90e2',
+                    padding: { x: 20, y: 10 }
+                }
+            ).setOrigin(0.5)
+             .setInteractive()
+             .on('pointerdown', () => {
+                 // Resume audio context
+                 if (this.sound.context.state === 'suspended') {
+                     this.sound.context.resume();
+                 }
+                 
+                 // Start ambient sound
+                 console.log('Starting ambient sound...');
+                 this.sounds.ambient.play();
+                 
+                 // Remove the start button
+                 startButton.destroy();
+                 
+                 // Add sound state logging
+                 Object.entries(this.sounds).forEach(([key, sound]) => {
+                     console.log(`Sound ${key} initialized:`, {
+                         volume: sound.volume,
+                         isPlaying: sound.isPlaying,
+                         duration: sound.duration
+                     });
+                 });
+             });
+        } catch (error) {
+            console.error('Error initializing sounds:', error);
+        }
+        
         // Reset map blocks when game starts/restarts
         this.resetMapBlocks();
+        
+        // Reset game state
+        this.score = 0;
+        this.moves = 0;
+        this.level = 1;
+        this.comboCount = 0;
         
         // Add a background rectangle for the game area
         this.add.rectangle(0, 0, GRID_SIZE * TILE_SIZE, GRID_SIZE * TILE_SIZE, 0x222222).setOrigin(0, 0);
@@ -87,18 +172,40 @@ class GameScene extends Phaser.Scene {
         });
         this.shimmerEmitter.stop();
         
-        // Create the game grid
-        for (let x = 0; x < GRID_SIZE; x++) {
-            this.grid[x] = [];
-            for (let y = 0; y < GRID_SIZE; y++) {
-                const gem = this.createGem(x, y);
+        // Create swirl effect emitter
+        this.swirlEmitter = this.add.particles(0, 0, {
+            speed: { min: 100, max: 200 },
+            scale: { start: 0.2, end: 0 },
+            alpha: { start: 0.6, end: 0 },
+            blendMode: 'ADD',
+            tint: [0x88ffff, 0xaaffff, 0xffffff],
+            lifespan: 1000,
+            quantity: 1
+        });
+        this.swirlEmitter.stop();
+        
+        // Add trail effect emitter
+        this.trailEmitter = this.add.particles(0, 0, {
+            speed: { min: 50, max: 100 },
+            scale: { start: 0.2, end: 0 },
+            alpha: { start: 0.6, end: 0 },
+            blendMode: 'ADD',
+            tint: [0x88ffff, 0xaaffff],
+            lifespan: 300,
+            quantity: 1,
+            emitZone: {
+                type: 'random',
+                source: new Phaser.Geom.Circle(0, 0, TILE_SIZE/4)
             }
-        }
+        });
+        this.trailEmitter.stop();
 
-        // Check if there are available matches, if not regenerate the board
-        if (!this.hasAvailableMatches()) {
-            this.regenerateBoard();
-        }
+        // Add match highlight effect
+        this.matchHighlight = this.add.graphics();
+        this.matchHighlight.setAlpha(0);
+        
+        // Generate a new random board
+        this.regenerateBoard();
 
         // Setup drag events
         this.input.on('dragstart', (pointer, gameObject) => {
@@ -211,6 +318,7 @@ class GameScene extends Phaser.Scene {
                 if (this.isAdjacent(gem, this.selectedTile)) {
                     this.swapGems(gem, this.selectedTile);
                 }
+                // Always clear the selected tile's tint and reset selection
                 this.selectedTile.clearTint();
                 this.selectedTile = null;
             } else {
@@ -406,7 +514,8 @@ class GameScene extends Phaser.Scene {
                 x: gem.gridX * TILE_SIZE + TILE_SIZE / 2,
                 y: gem.gridY * TILE_SIZE + TILE_SIZE / 2,
                 duration: 200,
-                ease: 'Back.easeOut', // Slight overshoot and bounce back
+                ease: 'Back.easeOut',
+                onStart: () => this.addTrailEffect(gem),
                 onComplete: resolve
             });
         });
@@ -427,34 +536,143 @@ class GameScene extends Phaser.Scene {
 
     findMatches() {
         const matches = [];
-
+        const matchedGems = new Set(); // Track all matched gems to avoid double counting
+        
+        // First pass: Find all horizontal and vertical matches
+        const allMatches = [];
+        
         // Check horizontal matches
         for (let y = 0; y < GRID_SIZE; y++) {
-            for (let x = 0; x < GRID_SIZE - 2; x++) {
-                const color = this.grid[x][y].color;
-                if (color === this.grid[x + 1][y].color && 
-                    color === this.grid[x + 2][y].color) {
-                    matches.push([
-                        this.grid[x][y],
-                        this.grid[x + 1][y],
-                        this.grid[x + 2][y]
-                    ]);
+            let matchLength = 1;
+            let currentColor = null;
+            let matchStart = 0;
+            
+            for (let x = 0; x < GRID_SIZE; x++) {
+                const gem = this.grid[x][y];
+                if (!gem || gem.isWhirlpool) {
+                    matchLength = 1;
+                    currentColor = null;
+                    matchStart = x + 1;
+                    continue;
                 }
+                
+                if (currentColor === gem.color) {
+                    matchLength++;
+                } else {
+                    if (matchLength >= 3) {
+                        const matchedGems = Array.from({ length: matchLength }, 
+                            (_, i) => this.grid[matchStart + i][y]);
+                        allMatches.push({
+                            gems: matchedGems,
+                            color: currentColor,
+                            type: 'horizontal'
+                        });
+                    }
+                    matchLength = 1;
+                    matchStart = x;
+                }
+                currentColor = gem.color;
+            }
+            
+            // Check for match at end of row
+            if (matchLength >= 3) {
+                const matchedGems = Array.from({ length: matchLength }, 
+                    (_, i) => this.grid[matchStart + i][y]);
+                allMatches.push({
+                    gems: matchedGems,
+                    color: currentColor,
+                    type: 'horizontal'
+                });
             }
         }
 
         // Check vertical matches
         for (let x = 0; x < GRID_SIZE; x++) {
-            for (let y = 0; y < GRID_SIZE - 2; y++) {
-                const color = this.grid[x][y].color;
-                if (color === this.grid[x][y + 1].color && 
-                    color === this.grid[x][y + 2].color) {
-                    matches.push([
-                        this.grid[x][y],
-                        this.grid[x][y + 1],
-                        this.grid[x][y + 2]
-                    ]);
+            let matchLength = 1;
+            let currentColor = null;
+            let matchStart = 0;
+            
+            for (let y = 0; y < GRID_SIZE; y++) {
+                const gem = this.grid[x][y];
+                if (!gem || gem.isWhirlpool) {
+                    matchLength = 1;
+                    currentColor = null;
+                    matchStart = y + 1;
+                    continue;
                 }
+                
+                if (currentColor === gem.color) {
+                    matchLength++;
+                } else {
+                    if (matchLength >= 3) {
+                        const matchedGems = Array.from({ length: matchLength }, 
+                            (_, i) => this.grid[x][matchStart + i]);
+                        allMatches.push({
+                            gems: matchedGems,
+                            color: currentColor,
+                            type: 'vertical'
+                        });
+                    }
+                    matchLength = 1;
+                    matchStart = y;
+                }
+                currentColor = gem.color;
+            }
+            
+            if (matchLength >= 3) {
+                const matchedGems = Array.from({ length: matchLength }, 
+                    (_, i) => this.grid[x][matchStart + i]);
+                allMatches.push({
+                    gems: matchedGems,
+                    color: currentColor,
+                    type: 'vertical'
+                });
+            }
+        }
+
+        // Second pass: Combine connected matches of the same color
+        const processedMatches = new Set();
+        
+        for (let i = 0; i < allMatches.length; i++) {
+            if (processedMatches.has(i)) continue;
+            
+            const match = allMatches[i];
+            const connectedGems = new Set(match.gems);
+            processedMatches.add(i);
+            
+            // Look for other matches of the same color that share gems
+            for (let j = i + 1; j < allMatches.length; j++) {
+                if (processedMatches.has(j)) continue;
+                
+                const otherMatch = allMatches[j];
+                if (otherMatch.color === match.color) {
+                    // Check if matches share any gems
+                    const hasSharedGem = otherMatch.gems.some(gem => 
+                        match.gems.some(matchGem => matchGem === gem)
+                    );
+                    
+                    if (hasSharedGem) {
+                        // Add all gems from the other match
+                        otherMatch.gems.forEach(gem => connectedGems.add(gem));
+                        processedMatches.add(j);
+                    }
+                }
+            }
+            
+            // Convert Set back to array and create the match object
+            const combinedGems = Array.from(connectedGems);
+            if (combinedGems.length >= 5) {
+                // Find center of the match for whirlpool placement
+                const centerGem = combinedGems[Math.floor(combinedGems.length / 2)];
+                matches.push({
+                    gems: combinedGems,
+                    createWhirlpool: { 
+                        x: centerGem.gridX, 
+                        y: centerGem.gridY 
+                    }
+                });
+            } else if (combinedGems.length >= 3) {
+                matches.push({ gems: combinedGems });
             }
         }
 
@@ -496,72 +714,56 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    createLevelUpEffect() {
-        // Create a level up text animation
-        const levelUpText = this.add.text(
-            this.game.config.width / 2,
-            this.game.config.height / 2,
-            'LEVEL UP!',
-            {
-                fontSize: '48px',
-                fill: '#fff',
-                stroke: '#000',
-                strokeThickness: 6
-            }
-        ).setOrigin(0.5);
-
-        // Add some particle effects
-        const particles = this.add.particles(0, 0, {
-            speed: { min: 100, max: 200 },
-            angle: { min: 0, max: 360 },
-            scale: { start: 0.6, end: 0 },
-            blendMode: 'ADD',
-            tint: [0xffff00, 0x00ffff, 0xff00ff],
-            lifespan: 1000,
-            quantity: 2
-        });
-
-        // Emit particles from the text
-        particles.setPosition(this.game.config.width / 2, this.game.config.height / 2);
-        particles.explode(50);
-
-        // Animate the text
-        this.tweens.add({
-            targets: levelUpText,
-            y: levelUpText.y - 100,
-            alpha: 0,
-            duration: 1000,
-            ease: 'Power2',
-            onComplete: () => {
-                levelUpText.destroy();
-                particles.destroy();
-            }
-        });
-    }
-
     async handleMatches(matches) {
         this.comboCount++;
         
+        // Play match sound with increasing pitch for combos
+        try {
+            if (this.sound.context.state === 'suspended') {
+                this.sound.context.resume();
+            }
+            console.log('Playing match sound...');
+            this.sounds.match.play({
+                rate: 1 + (this.comboCount * 0.1)
+            });
+        } catch (error) {
+            console.error('Error playing match sound:', error);
+        }
+        
+        // Add screen shake based on combo count
+        await this.shakeScreen(this.comboCount * 0.5, 100 + (this.comboCount * 20));
+        
+        // Track whirlpool creation positions
+        const whirlpoolPositions = [];
+        
         // Create underwater effects for each match
         matches.forEach(match => {
-            const centerGem = match[1];
+            const gems = match.gems;
+            const centerGem = gems[Math.floor(gems.length / 2)];
             const centerX = centerGem.x;
             const centerY = centerGem.y;
+            
+            // Highlight the match
+            this.highlightMatch(gems);
+            
+            // Store whirlpool creation position if it's a match of 5 or more
+            if (match.createWhirlpool) {
+                whirlpoolPositions.push({
+                    ...match.createWhirlpool,
+                    matchLength: gems.length
+                });
+            }
             
             // Create main sparkle effect at the center
             this.createSparkles(centerX, centerY, this.comboCount);
             
             // Create bubble trails from each matched jellyfish
-            match.forEach((gem, index) => {
+            gems.forEach((gem, index) => {
                 if (gem !== centerGem) {
-                    // Create smaller bubble trails with varying intensities
                     const trailIntensity = this.comboCount * (0.3 + (index * 0.2));
-                    
-                    // Create a sequence of bubble trails
                     const numTrails = 3;
                     for (let i = 0; i < numTrails; i++) {
                         setTimeout(() => {
-                            // Add some randomness to the position
                             const offsetX = Phaser.Math.Between(-10, 10);
                             const offsetY = Phaser.Math.Between(-10, 10);
                             this.createBubbleTrail(
@@ -569,15 +771,28 @@ class GameScene extends Phaser.Scene {
                                 gem.y + offsetY,
                                 trailIntensity
                             );
-                        }, i * 100); // Stagger the trails
+                        }, i * 100);
                     }
                 }
             });
         });
 
         // Fade out and remove matched gems
-        await Promise.all(matches.flat().map(gem => {
+        await Promise.all(matches.flatMap(match => match.gems).map(gem => {
             return new Promise(resolve => {
+                // Play pop sound for each gem
+                try {
+                    if (this.sound.context.state === 'suspended') {
+                        this.sound.context.resume();
+                    }
+                    console.log('Playing pop sound...');
+                    this.sounds.pop.play({
+                        rate: 1 + (Math.random() * 0.2)
+                    });
+                } catch (error) {
+                    console.error('Error playing pop sound:', error);
+                }
+                
                 this.tweens.add({
                     targets: gem,
                     alpha: 0,
@@ -585,18 +800,22 @@ class GameScene extends Phaser.Scene {
                     duration: 400,
                     ease: 'Power2',
                     onComplete: () => {
-                        // Increase score based on combo and level
                         const baseScore = 10 * this.comboCount;
                         const levelBonus = Math.floor(baseScore * (this.level * 0.1));
                         this.score += baseScore + levelBonus;
                         
-                        gem.destroy();
                         this.grid[gem.gridX][gem.gridY] = null;
+                        gem.destroy();
                         resolve();
                     }
                 });
             });
         }));
+
+        // Create whirlpools after gems are cleared
+        whirlpoolPositions.forEach(pos => {
+            this.createWhirlpool(pos.x, pos.y, pos.matchLength);
+        });
 
         // Check for level up
         this.checkLevelUp();
@@ -751,39 +970,445 @@ class GameScene extends Phaser.Scene {
         return false;
     }
 
-    regenerateBoard() {
-        console.log('No matches available, regenerating board...');
+    async createSwirlingEffect() {
+        const centerX = (GRID_SIZE * TILE_SIZE) / 2;
+        const centerY = (GRID_SIZE * TILE_SIZE) / 2;
+        const radius = GRID_SIZE * TILE_SIZE * 0.4;
+        const duration = 1000;
+        const particlesPerSwirl = 30;
         
-        // Store current game state
-        const currentScore = this.score;
-        const currentMoves = this.moves;
-        const currentLevel = this.level;
+        // Create swirling water effect
+        for (let i = 0; i < particlesPerSwirl; i++) {
+            const angle = (i / particlesPerSwirl) * Math.PI * 2;
+            const startX = centerX + Math.cos(angle) * radius;
+            const startY = centerY + Math.sin(angle) * radius;
+            
+            // Create swirling particle
+            const particle = this.add.circle(startX, startY, 4, 0x88ffff, 0.6);
+            
+            // Animate particle in a spiral
+            this.tweens.add({
+                targets: particle,
+                x: centerX,
+                y: centerY,
+                scale: { from: 1, to: 0 },
+                alpha: { from: 0.6, to: 0 },
+                duration: duration,
+                ease: 'Quad.in',
+                onComplete: () => particle.destroy()
+            });
+        }
         
-        // Destroy existing gems
-        this.gems.clear(true, true);
-        this.grid = [];
+        // Add bubble effects around the board
+        for (let i = 0; i < 20; i++) {
+            setTimeout(() => {
+                const side = Phaser.Math.Between(0, 3); // 0: top, 1: right, 2: bottom, 3: left
+                let x, y;
+                
+                switch (side) {
+                    case 0: // top
+                        x = Phaser.Math.Between(0, GRID_SIZE * TILE_SIZE);
+                        y = 0;
+                        break;
+                    case 1: // right
+                        x = GRID_SIZE * TILE_SIZE;
+                        y = Phaser.Math.Between(0, GRID_SIZE * TILE_SIZE);
+                        break;
+                    case 2: // bottom
+                        x = Phaser.Math.Between(0, GRID_SIZE * TILE_SIZE);
+                        y = GRID_SIZE * TILE_SIZE;
+                        break;
+                    case 3: // left
+                        x = 0;
+                        y = Phaser.Math.Between(0, GRID_SIZE * TILE_SIZE);
+                        break;
+                }
+                
+                this.createBubbleTrail(x, y, 1.5);
+            }, i * 50);
+        }
         
-        // Recreate the grid
-        for (let x = 0; x < GRID_SIZE; x++) {
-            this.grid[x] = [];
-            for (let y = 0; y < GRID_SIZE; y++) {
-                const gem = this.createGem(x, y);
+        // Create a wave ripple effect
+        const ripple = this.add.circle(centerX, centerY, 10, 0x88ffff, 0.3);
+        this.tweens.add({
+            targets: ripple,
+            scale: { from: 0, to: 8 },
+            alpha: { from: 0.3, to: 0 },
+            duration: duration,
+            ease: 'Quad.out',
+            onComplete: () => ripple.destroy()
+        });
+        
+        // Wait for the effect to complete
+        return new Promise(resolve => setTimeout(resolve, duration));
+    }
+
+    createWhirlpool(x, y, matchLength) {
+        const whirlpool = this.add.sprite(
+            x * TILE_SIZE + TILE_SIZE / 2,
+            y * TILE_SIZE + TILE_SIZE / 2,
+            'whirlpool'
+        );
+        
+        whirlpool.setDisplaySize(TILE_SIZE - 4, TILE_SIZE - 4);
+        whirlpool.gridX = x;
+        whirlpool.gridY = y;
+        whirlpool.isWhirlpool = true;
+        whirlpool.powerLevel = Math.floor((matchLength - 4) / 2); // 5=0, 6-7=1, 8=2 rows
+        
+        // Add continuous rotation animation
+        this.tweens.add({
+            targets: whirlpool,
+            rotation: Math.PI * 2,
+            duration: 2000,
+            repeat: -1,
+            ease: 'Linear'
+        });
+        
+        // Add pulsing effect with intensity based on power level
+        this.tweens.add({
+            targets: whirlpool,
+            scale: 1.1 + (whirlpool.powerLevel * 0.1),
+            duration: 1000 - (whirlpool.powerLevel * 100),
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // Add glow effect based on power level
+        const glowIntensity = 0.3 + (whirlpool.powerLevel * 0.2);
+        const glowColor = 0x88ffff;
+        const glow = this.add.circle(
+            whirlpool.x,
+            whirlpool.y,
+            TILE_SIZE / 2,
+            glowColor,
+            glowIntensity
+        );
+        whirlpool.glow = glow;
+        
+        // Make interactive
+        whirlpool.setInteractive();
+        whirlpool.on('pointerdown', () => this.activateWhirlpool(whirlpool));
+        
+        this.grid[x][y] = whirlpool;
+        this.whirlpools.add(whirlpool);
+        return whirlpool;
+    }
+
+    async activateWhirlpool(whirlpool) {
+        if (!this.canMove) return;
+        this.canMove = false;
+        
+        // Play whirlpool sound
+        try {
+            if (this.sound.context.state === 'suspended') {
+                this.sound.context.resume();
+            }
+            console.log('Playing whirlpool sound...');
+            this.sounds.whirlpool.play();
+        } catch (error) {
+            console.error('Error playing whirlpool sound:', error);
+        }
+        
+        // Create intense whirlpool effect
+        const particles = this.add.particles(0, 0, {
+            speed: { min: 100 + (whirlpool.powerLevel * 50), max: 200 + (whirlpool.powerLevel * 50) },
+            scale: { start: 0.6, end: 0 },
+            blendMode: 'ADD',
+            tint: [0x88ffff, 0xaaffff, 0xffffff],
+            lifespan: 1000,
+            quantity: 2 + whirlpool.powerLevel
+        });
+        
+        particles.setPosition(whirlpool.x, whirlpool.y);
+        
+        // Animate whirlpool growing and spinning faster
+        const growTween = this.tweens.add({
+            targets: whirlpool,
+            scale: 1.5 + (whirlpool.powerLevel * 0.2),
+            rotation: Math.PI * (6 + whirlpool.powerLevel * 2),
+            duration: 1000,
+            ease: 'Quad.easeIn'
+        });
+        
+        // Wait for animation
+        await new Promise(resolve => growTween.on('complete', resolve));
+        
+        // Calculate rows to clear based on power level
+        const rowsToRemove = 1 + whirlpool.powerLevel;
+        const startRow = Math.max(0, whirlpool.gridY - Math.floor(rowsToRemove / 2));
+        const gemsToRemove = [];
+        
+        // Collect gems from all affected rows
+        for (let rowOffset = 0; rowOffset < rowsToRemove; rowOffset++) {
+            const currentRow = startRow + rowOffset;
+            if (currentRow >= GRID_SIZE) break;
+            
+            for (let x = 0; x < GRID_SIZE; x++) {
+                if (this.grid[x][currentRow] && this.grid[x][currentRow] !== whirlpool) {
+                    gemsToRemove.push(this.grid[x][currentRow]);
+                }
             }
         }
         
-        // If the new board also has no matches, try again
-        if (!this.hasAvailableMatches()) {
-            this.regenerateBoard();
-            return;
+        // Create wave effect for each row
+        for (let rowOffset = 0; rowOffset < rowsToRemove; rowOffset++) {
+            const currentRow = startRow + rowOffset;
+            if (currentRow >= GRID_SIZE) break;
+            
+            for (let x = 0; x < GRID_SIZE; x++) {
+                const delay = (x + rowOffset * GRID_SIZE) * 50;
+                const waveParticles = this.add.particles(
+                    x * TILE_SIZE + TILE_SIZE / 2,
+                    currentRow * TILE_SIZE + TILE_SIZE / 2,
+                    {
+                        speed: { min: 50, max: 150 },
+                        scale: { start: 0.4, end: 0 },
+                        blendMode: 'ADD',
+                        tint: [0x88ffff, 0xaaffff],
+                        lifespan: 800,
+                        quantity: 10 + (whirlpool.powerLevel * 5)
+                    }
+                );
+                
+                setTimeout(() => waveParticles.destroy(), 1000);
+            }
         }
         
-        // Restore game state
-        this.score = currentScore;
-        this.moves = currentMoves;
-        this.level = currentLevel;
+        // Remove gems with swirl effect
+        await Promise.all(gemsToRemove.map(gem => {
+            return new Promise(resolve => {
+                this.tweens.add({
+                    targets: gem,
+                    scale: 0,
+                    rotation: Math.PI * 2,
+                    alpha: 0,
+                    duration: 500,
+                    delay: (gem.gridX + (gem.gridY - startRow) * GRID_SIZE) * 50,
+                    ease: 'Back.easeIn',
+                    onComplete: () => {
+                        this.grid[gem.gridX][gem.gridY] = null;
+                        gem.destroy();
+                        resolve();
+                    }
+                });
+            });
+        }));
         
-        // Update UI
+        // Remove whirlpool and its glow
+        this.whirlpools.delete(whirlpool);
+        this.grid[whirlpool.gridX][whirlpool.gridY] = null;
+        whirlpool.glow.destroy();
+        whirlpool.destroy();
+        particles.destroy();
+        
+        // Add score for cleared gems with bonus multiplier based on power level
+        this.score += gemsToRemove.length * 50 * (1 + whirlpool.powerLevel);
+        
+        // Let gems fall and fill spaces
+        await this.cascadeGems();
+        this.fillEmptySpaces();
+        
+        // Check for new matches
+        const newMatches = this.findMatches();
+        if (newMatches.length > 0) {
+            await this.handleMatches(newMatches);
+        }
+        
         this.updateUI();
+        this.canMove = true;
+    }
+
+    // Add screen shake method
+    async shakeScreen(intensity = 1, duration = 100) {
+        const camera = this.cameras.main;
+        const originalX = camera.scrollX;
+        const originalY = camera.scrollY;
+        
+        const shakeIntensity = this.cameraShake.intensity * intensity;
+        
+        return new Promise(resolve => {
+            this.tweens.add({
+                targets: camera,
+                scrollX: {
+                    value: originalX + (Math.random() - 0.5) * shakeIntensity * 100,
+                    duration: duration,
+                    ease: this.cameraShake.ease,
+                    yoyo: true,
+                    repeat: 1
+                },
+                scrollY: {
+                    value: originalY + (Math.random() - 0.5) * shakeIntensity * 100,
+                    duration: duration,
+                    ease: this.cameraShake.ease,
+                    yoyo: true,
+                    repeat: 1
+                },
+                onComplete: () => {
+                    camera.scrollX = originalX;
+                    camera.scrollY = originalY;
+                    resolve();
+                }
+            });
+        });
+    }
+
+    // Add trail effect to gems
+    addTrailEffect(gem) {
+        this.trailEmitter.setPosition(gem.x, gem.y);
+        this.trailEmitter.start();
+        
+        // Stop trail after a short delay
+        setTimeout(() => {
+            this.trailEmitter.stop();
+        }, 300);
+    }
+
+    // Enhance match highlighting
+    highlightMatch(gems) {
+        this.matchHighlight.clear();
+        this.matchHighlight.lineStyle(4, 0x88ffff, 0.8);
+        
+        // Draw connecting lines between gems
+        for (let i = 0; i < gems.length - 1; i++) {
+            const gem1 = gems[i];
+            const gem2 = gems[i + 1];
+            
+            this.matchHighlight.beginPath();
+            this.matchHighlight.moveTo(gem1.x, gem1.y);
+            this.matchHighlight.lineTo(gem2.x, gem2.y);
+            this.matchHighlight.strokePath();
+        }
+        
+        // Add glow effects as separate graphics objects
+        const glowObjects = [];
+        gems.forEach(gem => {
+            const glow = this.add.circle(gem.x, gem.y, TILE_SIZE/2, 0x88ffff, 0.3);
+            glowObjects.push(glow);
+        });
+        
+        // Fade out highlight and glow effects
+        this.tweens.add({
+            targets: [this.matchHighlight, ...glowObjects],
+            alpha: 0,
+            duration: 500,
+            delay: 300,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                // Clean up glow objects
+                glowObjects.forEach(glow => glow.destroy());
+            }
+        });
+    }
+
+    // Add cleanup method for sounds
+    cleanup() {
+        // Stop all sounds
+        Object.values(this.sounds).forEach(sound => {
+            sound.stop();
+        });
+    }
+
+    // Modify scene shutdown to clean up sounds
+    shutdown() {
+        this.cleanup();
+        super.shutdown();
+    }
+
+    createLevelUpEffect() {
+        // Play level up sound
+        try {
+            if (this.sound.context.state === 'suspended') {
+                this.sound.context.resume();
+            }
+            console.log('Playing level up sound...');
+            this.sounds.levelup.play();
+        } catch (error) {
+            console.error('Error playing level up sound:', error);
+        }
+        
+        // Add intense screen shake for level up
+        this.shakeScreen(2, 200);
+        
+        // Create a level up text animation
+        const levelUpText = this.add.text(
+            this.game.config.width / 2,
+            this.game.config.height / 2,
+            'LEVEL UP!',
+            {
+                fontSize: '48px',
+                fill: '#fff',
+                stroke: '#000',
+                strokeThickness: 6
+            }
+        ).setOrigin(0.5);
+
+        // Add some particle effects
+        const particles = this.add.particles(0, 0, {
+            speed: { min: 100, max: 200 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.6, end: 0 },
+            blendMode: 'ADD',
+            tint: [0xffff00, 0x00ffff, 0xff00ff],
+            lifespan: 1000,
+            quantity: 2
+        });
+
+        // Emit particles from the text
+        particles.setPosition(this.game.config.width / 2, this.game.config.height / 2);
+        particles.explode(50);
+
+        // Animate the text
+        this.tweens.add({
+            targets: levelUpText,
+            y: levelUpText.y - 100,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Power2',
+            onComplete: () => {
+                levelUpText.destroy();
+                particles.destroy();
+            }
+        });
+    }
+
+    // Add regenerateBoard method
+    regenerateBoard() {
+        // Clear existing gems
+        this.gems.clear(true, true);
+        this.grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(null));
+        
+        // Create new gems
+        for (let x = 0; x < GRID_SIZE; x++) {
+            for (let y = 0; y < GRID_SIZE; y++) {
+                this.createGem(x, y);
+            }
+        }
+        
+        // Check for matches and regenerate if necessary (with a maximum number of attempts)
+        let attempts = 0;
+        const maxAttempts = 10; // Maximum number of regeneration attempts
+        
+        while (this.hasAvailableMatches() && attempts < maxAttempts) {
+            // Clear existing gems
+            this.gems.clear(true, true);
+            this.grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(null));
+            
+            // Create new gems
+            for (let x = 0; x < GRID_SIZE; x++) {
+                for (let y = 0; y < GRID_SIZE; y++) {
+                    this.createGem(x, y);
+                }
+            }
+            
+            attempts++;
+        }
+        
+        // If we still have matches after max attempts, just accept the board
+        if (this.hasAvailableMatches()) {
+            console.log('Warning: Could not generate a board without matches after', maxAttempts, 'attempts');
+        }
     }
 }
 
@@ -794,26 +1419,102 @@ const config = {
     height: GRID_SIZE * TILE_SIZE,
     parent: 'game',
     backgroundColor: '#333333',
-    scene: GameScene
+    scene: GameScene,
+    // Disable all storage and persistence features
+    storage: null,
+    disableContextMenu: true,
+    // Add error handling
+    errorHandler: (error) => {
+        console.error('Game error:', error);
+    },
+    // Add DOM element handling
+    dom: {
+        createContainer: true
+    }
 };
 
-// Create the game instance
-const game = new Phaser.Game(config);
-
-// Initialize pause and restart buttons
-document.getElementById('pause-btn').addEventListener('click', () => {
-    if (game.scene.isPaused('GameScene')) {
-        game.scene.resume('GameScene');
-    } else {
-        game.scene.pause('GameScene');
+// Create the game instance with error handling
+let game;
+try {
+    // Ensure the game container exists
+    let gameContainer = document.getElementById('game');
+    if (!gameContainer) {
+        gameContainer = document.createElement('div');
+        gameContainer.id = 'game';
+        document.body.appendChild(gameContainer);
     }
-});
-
-document.getElementById('restart-btn').addEventListener('click', () => {
-    // Reset the map blocks
-    const scene = game.scene.getScene('GameScene');
-    if (scene) {
-        scene.resetMapBlocks();
+    
+    // Clear any existing content
+    gameContainer.innerHTML = '';
+    
+    // Disable storage before creating the game
+    if (window.localStorage) {
+        window.localStorage.clear();
     }
-    game.scene.restart('GameScene');
-}); 
+    if (window.sessionStorage) {
+        window.sessionStorage.clear();
+    }
+    
+    // Create game instance
+    game = new Phaser.Game(config);
+} catch (error) {
+    console.error('Error creating game:', error);
+    // Fallback: reload the page
+    window.location.reload();
+}
+
+// Initialize restart button with error handling
+const restartBtn = document.getElementById('restart-btn');
+if (restartBtn) {
+    restartBtn.addEventListener('click', async () => {
+        try {
+            const scene = game.scene.getScene('GameScene');
+            if (scene) {
+                // Disable input during transition
+                scene.canMove = false;
+                
+                // Reset the map blocks
+                scene.resetMapBlocks();
+                
+                // Fade out existing gems with swirl effect
+                if (scene.gems.getChildren().length > 0) {
+                    const fadePromises = scene.gems.getChildren().map(gem => {
+                        return new Promise(resolve => {
+                            scene.tweens.add({
+                                targets: gem,
+                                alpha: 0,
+                                scale: 0.5,
+                                rotation: Phaser.Math.DegToRad(180),
+                                duration: 500,
+                                ease: 'Back.in',
+                                onComplete: resolve
+                            });
+                        });
+                    });
+                    
+                    await Promise.all(fadePromises);
+                }
+                
+                // Wait for all animations to complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Remove the old scene
+                game.scene.remove('GameScene');
+                
+                // Wait for scene removal to complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Create and add the new scene
+                const newScene = new GameScene();
+                game.scene.add('GameScene', newScene);
+                
+                // Start the new scene
+                game.scene.start('GameScene');
+            }
+        } catch (error) {
+            console.error('Error during game restart:', error);
+            // Fallback restart - just reload the page
+            window.location.reload();
+        }
+    });
+} 

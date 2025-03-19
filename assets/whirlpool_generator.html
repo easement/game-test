@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Whirlpool Generator</title>
+</head>
+<body>
+    <canvas id="whirlpoolCanvas" width="128" height="128"></canvas>
+    <script>
+        const canvas = document.getElementById('whirlpoolCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Clear canvas with transparency
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Set up gradient for the whirlpool
+        const gradient = ctx.createRadialGradient(
+            64, 64, 0,    // Inner circle center (x, y, radius)
+            64, 64, 64    // Outer circle center (x, y, radius)
+        );
+        
+        // Add color stops for a water-like effect
+        gradient.addColorStop(0, 'rgba(136, 255, 255, 0.9)');    // Center - bright cyan
+        gradient.addColorStop(0.3, 'rgba(68, 187, 255, 0.8)');   // Mid - blue
+        gradient.addColorStop(0.7, 'rgba(34, 136, 255, 0.6)');   // Outer - darker blue
+        gradient.addColorStop(1, 'rgba(0, 85, 255, 0)');         // Edge - transparent
+        
+        // Draw the base circle
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(64, 64, 64, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw spiral arms
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        
+        const spirals = 4;
+        const rotations = 3;
+        
+        for (let s = 0; s < spirals; s++) {
+            ctx.beginPath();
+            for (let i = 0; i <= 100; i++) {
+                const t = i / 100;
+                const angle = (s * Math.PI * 2 / spirals) + (t * Math.PI * 2 * rotations);
+                const radius = t * 60;
+                const x = 64 + radius * Math.cos(angle);
+                const y = 64 + radius * Math.sin(angle);
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
+        }
+        
+        // Add highlight effect
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.beginPath();
+        ctx.arc(48, 48, 10, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Convert to PNG
+        const link = document.createElement('a');
+        link.download = 'whirlpool.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    </script>
+</body>
+</html> 

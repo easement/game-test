@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sound Effects Generator</title>
+    <style>
+        body {
+            background: #1a1a1a;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #357abd;
+        }
+        .container {
+            max-width: 600px;
+            text-align: center;
+        }
+        .description {
+            margin: 20px 0;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sound Effects Generator</h1>
+        <p class="description">Click the buttons to generate and play different sound effects. Use these sounds in your game!</p>
+        
+        <button onclick="generateMatchSound()">Generate Match Sound</button>
+        <button onclick="generateWhirlpoolSound()">Generate Whirlpool Sound</button>
+        <button onclick="generateLevelUpSound()">Generate Level Up Sound</button>
+        <button onclick="generateAmbientSound()">Generate Ambient Sound</button>
+        <button onclick="generatePopSound()">Generate Pop Sound</button>
+    </div>
+
+    <script>
+        // Create audio context
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Helper function to create an oscillator with ADSR envelope
+        function createOscillator(frequency, duration, type = 'sine') {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            
+            // ADSR envelope
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(1, audioContext.currentTime + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            return { oscillator, gainNode };
+        }
+
+        // Helper function to create noise
+        function createNoise(duration) {
+            const bufferSize = audioContext.sampleRate * duration;
+            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+            const data = buffer.getChannelData(0);
+            
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            
+            const noise = audioContext.createBufferSource();
+            noise.buffer = buffer;
+            
+            const gainNode = audioContext.createGain();
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(1, audioContext.currentTime + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+            
+            noise.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            return noise;
+        }
+
+        // Generate match sound
+        function generateMatchSound() {
+            // Create descending frequency sweep
+            const sweep = createOscillator(800, 0.3, 'sine');
+            sweep.oscillator.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.3);
+            sweep.oscillator.start();
+            sweep.oscillator.stop(audioContext.currentTime + 0.3);
+            
+            // Add bubble effect
+            const bubble = createNoise(0.2);
+            bubble.start();
+            bubble.stop(audioContext.currentTime + 0.2);
+        }
+
+        // Generate whirlpool sound
+        function generateWhirlpoolSound() {
+            // Create swirling water effect
+            const swirl = createOscillator(400, 0.5, 'sine');
+            swirl.oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.5);
+            swirl.oscillator.start();
+            swirl.oscillator.stop(audioContext.currentTime + 0.5);
+            
+            // Add water noise
+            const water = createNoise(0.5);
+            water.start();
+            water.stop(audioContext.currentTime + 0.5);
+        }
+
+        // Generate level up sound
+        function generateLevelUpSound() {
+            // Create triumphant fanfare
+            const fanfare = createOscillator(600, 0.4, 'sine');
+            fanfare.oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.4);
+            fanfare.oscillator.start();
+            fanfare.oscillator.stop(audioContext.currentTime + 0.4);
+            
+            // Add sparkle effect
+            const sparkle = createNoise(0.3);
+            sparkle.start();
+            sparkle.stop(audioContext.currentTime + 0.3);
+        }
+
+        // Generate ambient sound
+        function generateAmbientSound() {
+            // Create gentle underwater ambiance
+            const ambient = createOscillator(200, 0.8, 'sine');
+            ambient.oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+            ambient.oscillator.frequency.setValueAtTime(220, audioContext.currentTime + 0.4);
+            ambient.oscillator.frequency.setValueAtTime(200, audioContext.currentTime + 0.8);
+            ambient.oscillator.start();
+            ambient.oscillator.stop(audioContext.currentTime + 0.8);
+            
+            // Add bubble pops
+            const bubbles = createNoise(0.8);
+            bubbles.start();
+            bubbles.stop(audioContext.currentTime + 0.8);
+        }
+
+        // Generate pop sound
+        function generatePopSound() {
+            // Create quick bubble pop
+            const pop = createOscillator(400, 0.1, 'sine');
+            pop.oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.1);
+            pop.oscillator.start();
+            pop.oscillator.stop(audioContext.currentTime + 0.1);
+            
+            // Add pop noise
+            const noise = createNoise(0.1);
+            noise.start();
+            noise.stop(audioContext.currentTime + 0.1);
+        }
+
+        // Resume audio context on first user interaction
+        document.addEventListener('click', () => {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }, { once: true });
+    </script>
+</body>
+</html> 
