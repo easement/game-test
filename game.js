@@ -1,4 +1,4 @@
-const GRID_SIZE = 8;
+const GRID_SIZE = 9;
 const TILE_SIZE = 64;
 const COLORS = ['pink_jellyfish', 'blue_jellyfish', 'purple_jellyfish', 'green_jellyfish', 'yellow_jellyfish'];
 
@@ -401,7 +401,7 @@ class GameScene extends Phaser.Scene {
     createRedX() {
         // Create the red X graphics
         this.redX = this.add.graphics();
-        this.redX.lineStyle(50, 0xff0000);
+        this.redX.lineStyle(50, 0x800080);
         
         // Calculate the dimensions for the X
         const padding = 50; // Padding from the edges
