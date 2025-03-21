@@ -2,6 +2,121 @@ const GRID_SIZE = 9;
 const TILE_SIZE = 64;
 const COLORS = ['pink_jellyfish', 'blue_jellyfish', 'purple_jellyfish', 'green_jellyfish', 'yellow_jellyfish'];
 
+class LoadingScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'LoadingScene' });
+    }
+
+    preload() {
+        // Create loading bar background
+        const width = this.cameras.main.width;
+        const height = this.cameras.main.height;
+        
+        // Add underwater background gradient
+        const gradient = this.add.graphics();
+        gradient.fillGradientStyle(0x1a2a6c, 0x1a2a6c, 0x1a2a6c, 0x1a2a6c, 255);
+        gradient.fillRect(0, 0, width, height);
+        
+        // Add loading text
+        const loadingText = this.add.text(width / 2, height / 2 - 50, 'Loading...', {
+            fontSize: '32px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        // Create loading bar
+        const progressBar = this.add.graphics();
+        const progressBox = this.add.graphics();
+        progressBox.fillStyle(0x222222, 0.8);
+        progressBox.fillRect(width / 2 - 160, height / 2 - 25, 320, 50);
+        
+        // Add loading text
+        const loadingBarText = this.add.text(width / 2, height / 2, '0%', {
+            fontSize: '24px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        // Create bubble particles
+        const bubbles = this.add.particles(0, 0, {
+            speed: { min: 50, max: 150 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.2, end: 0.4 },
+            alpha: { start: 0.6, end: 0 },
+            lifespan: 2000,
+            quantity: 1,
+            blendMode: 'ADD',
+            tint: [0x88ffff, 0xffffff],
+            emitZone: {
+                type: 'random',
+                source: new Phaser.Geom.Rectangle(0, 0, width, height)
+            }
+        });
+        
+        // Start bubble emission
+        bubbles.start();
+        
+        // Create wave effect
+        const wave = this.add.graphics();
+        wave.lineStyle(2, 0x88ffff, 0.3);
+        wave.beginPath();
+        wave.moveTo(0, height / 2);
+        for (let x = 0; x < width; x += 10) {
+            const y = height / 2 + Math.sin(x / 50) * 20;
+            wave.lineTo(x, y);
+        }
+        wave.strokePath();
+        
+        // Animate wave
+        this.tweens.add({
+            targets: wave,
+            alpha: { from: 0.3, to: 0.6 },
+            duration: 2000,
+            yoyo: true,
+            repeat: -1
+        });
+        
+        // Load game assets
+        this.load.on('progress', (value) => {
+            progressBar.clear();
+            progressBar.fillStyle(0x88ffff, 1);
+            progressBar.fillRect(width / 2 - 150, height / 2 - 15, 300 * value, 30);
+            loadingBarText.setText(Math.round(value * 100) + '%');
+        });
+        
+        this.load.on('complete', () => {
+            // Fade out loading screen
+            this.tweens.add({
+                targets: [gradient, loadingText, progressBar, progressBox, loadingBarText, bubbles, wave],
+                alpha: 0,
+                duration: 1000,
+                onComplete: () => {
+                    this.scene.start('GameScene');
+                }
+            });
+        });
+        
+        // Load all game assets
+        COLORS.forEach(jellyfish => {
+            this.load.image(jellyfish, `assets/${jellyfish}.png`);
+        });
+        
+        this.load.image('whirlpool', 'assets/whirlpool.png');
+        
+        const soundFiles = [
+            { key: 'match', path: 'assets/sounds/match.mp3' },
+            { key: 'whirlpool', path: 'assets/sounds/whirlpool.mp3' },
+            { key: 'levelup', path: 'assets/sounds/levelup.mp3' },
+            { key: 'ambient', path: 'assets/sounds/ambient.mp3' },
+            { key: 'pop', path: 'assets/sounds/pop.mp3' }
+        ];
+        
+        soundFiles.forEach(sound => {
+            this.load.audio(sound.key, sound.path);
+        });
+    }
+}
+
 class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
@@ -14,6 +129,7 @@ class GameScene extends Phaser.Scene {
         this.comboCount = 0;
         this.revealedBlocks = new Set(); // Track revealed blocks
         this.whirlpools = new Set(); // Track whirlpool power-ups
+        this.debugMode = false; // Debug mode flag
         
         // Add camera shake configuration
         this.cameraShake = {
@@ -77,6 +193,9 @@ class GameScene extends Phaser.Scene {
         this.grid = [];
         this.gems = this.add.group();
         this.selectedTile = null;
+        
+        // Always set up debug controls
+        this.setupDebugControls();
         
         // Initialize sound effects with error handling
         console.log('Initializing sound effects...');
@@ -707,6 +826,50 @@ class GameScene extends Phaser.Scene {
                 const x = rect.left + rect.width / 2;
                 const y = rect.top + rect.height / 2;
                 this.createSparkles(x, y, 2);
+
+                // Check if all blocks are now revealed
+                const allBlocks = document.querySelectorAll('.map-block');
+                const allRevealed = Array.from(allBlocks).every(block => block.classList.contains('revealed'));
+                
+                if (allRevealed) {
+                    // Center the treasure map
+                    const mapContainer = document.querySelector('.treasure-map');
+                    mapContainer.style.position = 'fixed';
+                    mapContainer.style.top = '50%';
+                    mapContainer.style.left = '50%';
+                    mapContainer.style.transform = 'translate(-50%, -50%)';
+                    mapContainer.style.zIndex = '1000';
+                    
+                    // Add victory message
+                    const victoryMessage = document.createElement('div');
+                    victoryMessage.className = 'victory-message';
+                    victoryMessage.innerHTML = 'Congratulations, you win!';
+                    document.body.appendChild(victoryMessage);
+                    
+                    // Add victory message styles
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        .victory-message {
+                            position: fixed;
+                            top: 50%;
+                            left: 50%;
+                            transform: translate(-50%, -50%);
+                            font-size: 48px;
+                            font-weight: bold;
+                            color: #FFD700;
+                            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+                            z-index: 1001;
+                            text-align: center;
+                            animation: victoryPulse 2s infinite;
+                        }
+                        @keyframes victoryPulse {
+                            0% { transform: translate(-50%, -50%) scale(1); }
+                            50% { transform: translate(-50%, -50%) scale(1.1); }
+                            100% { transform: translate(-50%, -50%) scale(1); }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
             }
             
             // Update UI
@@ -915,6 +1078,17 @@ class GameScene extends Phaser.Scene {
             this.levelThresholds[this.level] : 
             'MAX';
         document.getElementById('next-level-value').textContent = nextThreshold;
+
+        // Update debug text if it exists
+        if (this.debugMode && this.debugText) {
+            this.debugText.setText([
+                'Debug Mode: ON',
+                `Score: ${this.score}`,
+                `Moves: ${this.moves}`,
+                `Level: ${this.level}`,
+                `Combo: ${this.comboCount}`
+            ].join('\n'));
+        }
     }
 
     resetMapBlocks() {
@@ -1410,6 +1584,117 @@ class GameScene extends Phaser.Scene {
             console.log('Warning: Could not generate a board without matches after', maxAttempts, 'attempts');
         }
     }
+
+    // Add debug-specific methods
+    setupDebugControls() {
+        // Add debug text
+        this.debugText = this.add.text(10, 10, `Debug Mode: ${this.debugMode ? 'ON' : 'OFF'}`, {
+            fontSize: '16px',
+            fill: '#00ff00'
+        });
+
+        // Add keyboard shortcuts for debug features
+        this.input.keyboard.on('keydown-D', () => {
+            this.debugMode = !this.debugMode;
+            this.debugText.setText(`Debug Mode: ${this.debugMode ? 'ON' : 'OFF'}`);
+            console.log(`Debug mode ${this.debugMode ? 'enabled' : 'disabled'}`);
+        });
+
+        this.input.keyboard.on('keydown-L', () => {
+            if (this.debugMode) {
+                this.level++;
+                this.updateUI();
+                console.log('Debug: Level increased to', this.level);
+
+                // Get all unrevealed blocks
+                const unrevealedBlocks = Array.from(document.querySelectorAll('.map-block:not(.revealed)'));
+                
+                if (unrevealedBlocks.length > 0) {
+                    // Reveal the first unrevealed block
+                    const blockToReveal = unrevealedBlocks[0];
+                    
+                    // Add to revealed set and add revealed class
+                    this.revealedBlocks.add(blockToReveal.getAttribute('data-level'));
+                    blockToReveal.classList.add('revealed');
+                    
+                    // Add some sparkles near the revealed block
+                    const rect = blockToReveal.getBoundingClientRect();
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+                    this.createSparkles(x, y, 2);
+
+                    // Check if all blocks are now revealed
+                    const allBlocks = document.querySelectorAll('.map-block');
+                    const allRevealed = Array.from(allBlocks).every(block => block.classList.contains('revealed'));
+                    
+                    if (allRevealed) {
+                        // Center the treasure map if it exists
+                        const mapContainer = document.querySelector('.treasure-map');
+                        if (mapContainer) {
+                            mapContainer.style.position = 'fixed';
+                            mapContainer.style.top = '50%';
+                            mapContainer.style.left = '50%';
+                            mapContainer.style.transform = 'translate(-50%, -50%)';
+                            mapContainer.style.zIndex = '1000';
+                        }
+                        
+                        // Add victory message
+                        const victoryMessage = document.createElement('div');
+                        victoryMessage.className = 'victory-message';
+                        victoryMessage.innerHTML = 'Congratulations, you win!';
+                        document.body.appendChild(victoryMessage);
+                        
+                        // Add victory message styles
+                        const style = document.createElement('style');
+                        style.textContent = `
+                            .victory-message {
+                                position: fixed;
+                                top: 50%;
+                                left: 50%;
+                                transform: translate(-50%, -50%);
+                                font-size: 48px;
+                                font-weight: bold;
+                                color: #FFD700;
+                                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+                                z-index: 1001;
+                                text-align: center;
+                                animation: victoryPulse 2s infinite;
+                            }
+                            @keyframes victoryPulse {
+                                0% { transform: translate(-50%, -50%) scale(1); }
+                                50% { transform: translate(-50%, -50%) scale(1.1); }
+                                100% { transform: translate(-50%, -50%) scale(1); }
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+                }
+            }
+        });
+
+        this.input.keyboard.on('keydown-S', () => {
+            if (this.debugMode) {
+                this.score += 100;
+                this.updateUI();
+                console.log('Debug: Score increased by 100');
+            }
+        });
+
+        this.input.keyboard.on('keydown-M', () => {
+            if (this.debugMode) {
+                this.moves += 10;
+                this.updateUI();
+                console.log('Debug: Moves increased by 10');
+            }
+        });
+    }
+
+    // Add debug logging method
+    debugLog(message, data = null) {
+        if (this.debugMode) {
+            console.log(`[DEBUG] ${message}`, data || '');
+        }
+    }
 }
 
 // Initialize the game
@@ -1419,7 +1704,7 @@ const config = {
     height: GRID_SIZE * TILE_SIZE,
     parent: 'game',
     backgroundColor: '#333333',
-    scene: GameScene,
+    scene: [LoadingScene, GameScene],
     // Disable all storage and persistence features
     storage: null,
     disableContextMenu: true,
@@ -1468,6 +1753,22 @@ const restartBtn = document.getElementById('restart-btn');
 if (restartBtn) {
     restartBtn.addEventListener('click', async () => {
         try {
+            // Remove victory message if it exists
+            const victoryMessage = document.querySelector('.victory-message');
+            if (victoryMessage) {
+                victoryMessage.remove();
+            }
+
+            // Reset treasure map position if it exists
+            const mapContainer = document.querySelector('.treasure-map');
+            if (mapContainer) {
+                mapContainer.style.position = '';
+                mapContainer.style.top = '';
+                mapContainer.style.left = '';
+                mapContainer.style.transform = '';
+                mapContainer.style.zIndex = '';
+            }
+
             const scene = game.scene.getScene('GameScene');
             if (scene) {
                 // Disable input during transition
