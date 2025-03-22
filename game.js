@@ -12,87 +12,230 @@ class LoadingScene extends Phaser.Scene {
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
         
-        // Add underwater background gradient
+        // Add underwater background gradient with multiple layers
         const gradient = this.add.graphics();
         gradient.fillGradientStyle(0x1a2a6c, 0x1a2a6c, 0x1a2a6c, 0x1a2a6c, 255);
         gradient.fillRect(0, 0, width, height);
         
-        // Add loading text
-        const loadingText = this.add.text(width / 2, height / 2 - 50, 'Loading...', {
-            fontSize: '32px',
+        // Add second gradient layer for depth
+        const gradient2 = this.add.graphics();
+        gradient2.fillGradientStyle(0x2a3a7c, 0x1a2a6c, 0x1a2a6c, 0x1a2a6c, 255);
+        gradient2.fillRect(0, 0, width, height);
+        
+        // Add title text with enhanced glow effect
+        const titleText = this.add.text(width / 2, height / 4, 'Jellyfish Match', {
+            fontSize: '64px',
             fill: '#ffffff',
-            fontFamily: 'Arial'
+            fontFamily: 'Arial',
+            stroke: '#88ffff',
+            strokeThickness: 12,
+            shadow: {
+                offsetX: 0,
+                offsetY: 0,
+                color: '#88ffff',
+                blur: 20,
+                fill: true
+            }
         }).setOrigin(0.5);
         
-        // Create loading bar
+        // Add loading text with enhanced pulsing effect
+        const loadingText = this.add.text(width / 2, height / 2 - 50, 'Loading...', {
+            fontSize: '36px',
+            fill: '#ffffff',
+            fontFamily: 'Arial',
+            stroke: '#88ffff',
+            strokeThickness: 4,
+            shadow: {
+                offsetX: 0,
+                offsetY: 0,
+                color: '#88ffff',
+                blur: 10,
+                fill: true
+            }
+        }).setOrigin(0.5);
+        
+        // Create loading bar with enhanced glow effect
         const progressBar = this.add.graphics();
         const progressBox = this.add.graphics();
         progressBox.fillStyle(0x222222, 0.8);
         progressBox.fillRect(width / 2 - 160, height / 2 - 25, 320, 50);
         
-        // Add loading text
+        // Add loading text with percentage
         const loadingBarText = this.add.text(width / 2, height / 2, '0%', {
-            fontSize: '24px',
+            fontSize: '28px',
             fill: '#ffffff',
-            fontFamily: 'Arial'
+            fontFamily: 'Arial',
+            stroke: '#88ffff',
+            strokeThickness: 2
         }).setOrigin(0.5);
         
-        // Create bubble particles
-        const bubbles = this.add.particles(0, 0, {
-            speed: { min: 50, max: 150 },
+        // Create multiple bubble particle systems with varying properties
+        const bubbleSystems = [];
+        for (let i = 0; i < 4; i++) {
+            const bubbles = this.add.particles(0, 0, {
+                speed: { min: 50 + (i * 20), max: 150 + (i * 20) },
+                angle: { min: 0, max: 360 },
+                scale: { start: 0.2 + (i * 0.1), end: 0.4 + (i * 0.1) },
+                alpha: { start: 0.6, end: 0 },
+                lifespan: 2000 + (i * 500),
+                quantity: 1,
+                blendMode: 'ADD',
+                tint: [0x88ffff, 0xffffff],
+                emitZone: {
+                    type: 'random',
+                    source: new Phaser.Geom.Rectangle(0, 0, width, height)
+                }
+            });
+            bubbleSystems.push(bubbles);
+            bubbles.start();
+        }
+        
+        // Create jellyfish-like particles with enhanced effects
+        const jellyfishParticles = this.add.particles(0, 0, {
+            speed: { min: 20, max: 40 },
             angle: { min: 0, max: 360 },
-            scale: { start: 0.2, end: 0.4 },
-            alpha: { start: 0.6, end: 0 },
-            lifespan: 2000,
+            scale: { start: 0.3, end: 0.6 },
+            alpha: { start: 0.8, end: 0 },
+            lifespan: 3000,
             quantity: 1,
             blendMode: 'ADD',
-            tint: [0x88ffff, 0xffffff],
+            tint: [0xff88ff, 0x88ffff, 0xffff88],
             emitZone: {
                 type: 'random',
                 source: new Phaser.Geom.Rectangle(0, 0, width, height)
             }
         });
+        jellyfishParticles.start();
         
-        // Start bubble emission
-        bubbles.start();
-        
-        // Create wave effect
-        const wave = this.add.graphics();
-        wave.lineStyle(2, 0x88ffff, 0.3);
-        wave.beginPath();
-        wave.moveTo(0, height / 2);
-        for (let x = 0; x < width; x += 10) {
-            const y = height / 2 + Math.sin(x / 50) * 20;
-            wave.lineTo(x, y);
+        // Create multiple wave effects with enhanced animations
+        const waves = [];
+        for (let i = 0; i < 5; i++) {
+            const wave = this.add.graphics();
+            wave.lineStyle(2, 0x88ffff, 0.2 - (i * 0.05));
+            wave.beginPath();
+            wave.moveTo(0, height / 2 + (i * 20));
+            
+            // Create more complex wave pattern
+            for (let x = 0; x < width; x += 10) {
+                const y = height / 2 + (i * 20) + 
+                    Math.sin(x / 50 + (i * Math.PI / 2)) * 20 +
+                    Math.sin(x / 30 + (i * Math.PI / 3)) * 10;
+                wave.lineTo(x, y);
+            }
+            wave.strokePath();
+            waves.push(wave);
+            
+            // Enhanced wave animation
+            this.tweens.add({
+                targets: wave,
+                alpha: { from: 0.2 - (i * 0.05), to: 0.4 - (i * 0.05) },
+                duration: 2000 + (i * 500),
+                yoyo: true,
+                repeat: -1,
+                delay: i * 500
+            });
         }
-        wave.strokePath();
         
-        // Animate wave
+        // Add pulsing glow effect to title with enhanced animation
         this.tweens.add({
-            targets: wave,
-            alpha: { from: 0.3, to: 0.6 },
+            targets: titleText,
+            alpha: { from: 0.8, to: 1 },
+            scale: { from: 0.95, to: 1.05 },
             duration: 2000,
             yoyo: true,
-            repeat: -1
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+        
+        // Add pulsing effect to loading text with enhanced animation
+        this.tweens.add({
+            targets: loadingText,
+            alpha: { from: 0.6, to: 1 },
+            scale: { from: 0.98, to: 1.02 },
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
         });
         
         // Load game assets
         this.load.on('progress', (value) => {
             progressBar.clear();
-            progressBar.fillStyle(0x88ffff, 1);
+            // Add gradient fill to progress bar with enhanced glow
+            progressBar.fillGradientStyle(0x88ffff, 0x88ffff, 0x88ffff, 0x88ffff, 255);
             progressBar.fillRect(width / 2 - 150, height / 2 - 15, 300 * value, 30);
             loadingBarText.setText(Math.round(value * 100) + '%');
+            
+            // Enhanced sparkle effect to progress bar
+            if (Math.random() < 0.3) {
+                const sparkle = this.add.circle(
+                    width / 2 - 150 + (300 * value),
+                    height / 2,
+                    3,
+                    0xffffff,
+                    0.8
+                );
+                this.tweens.add({
+                    targets: sparkle,
+                    scale: { from: 1, to: 0 },
+                    alpha: { from: 0.8, to: 0 },
+                    duration: 500,
+                    ease: 'Quad.easeOut',
+                    onComplete: () => sparkle.destroy()
+                });
+            }
         });
         
         this.load.on('complete', () => {
-            // Fade out loading screen
-            this.tweens.add({
-                targets: [gradient, loadingText, progressBar, progressBox, loadingBarText, bubbles, wave],
-                alpha: 0,
-                duration: 1000,
-                onComplete: () => {
-                    this.scene.start('GameScene');
+            // Enhanced completion effect
+            const completionParticles = this.add.particles(0, 0, {
+                speed: { min: 100, max: 200 },
+                angle: { min: 0, max: 360 },
+                scale: { start: 0.4, end: 0 },
+                alpha: { start: 0.8, end: 0 },
+                lifespan: 1000,
+                quantity: 2,
+                blendMode: 'ADD',
+                tint: [0x88ffff, 0xffffff],
+                emitZone: {
+                    type: 'random',
+                    source: new Phaser.Geom.Rectangle(width / 2 - 100, height / 2 - 100, 200, 200)
                 }
+            });
+            completionParticles.explode(50);
+            
+            // Add a final wave effect
+            const finalWave = this.add.graphics();
+            finalWave.lineStyle(4, 0x88ffff, 0.6);
+            finalWave.beginPath();
+            finalWave.moveTo(0, height / 2);
+            for (let x = 0; x < width; x += 10) {
+                const y = height / 2 + Math.sin(x / 30) * 30;
+                finalWave.lineTo(x, y);
+            }
+            finalWave.strokePath();
+            
+            // Animate final wave
+            this.tweens.add({
+                targets: finalWave,
+                alpha: { from: 0.6, to: 0 },
+                scale: { from: 1, to: 1.5 },
+                duration: 1000,
+                ease: 'Quad.easeOut',
+                onComplete: () => finalWave.destroy()
+            });
+            
+            // Fade out loading screen with enhanced transition
+            this.time.delayedCall(500, () => {
+                this.tweens.add({
+                    targets: [gradient, gradient2, titleText, loadingText, progressBar, progressBox, loadingBarText, ...bubbleSystems, jellyfishParticles, ...waves],
+                    alpha: 0,
+                    duration: 1000,
+                    ease: 'Quad.easeInOut',
+                    onComplete: () => {
+                        this.scene.start('GameScene');
+                    }
+                });
             });
         });
         
